@@ -5,3 +5,5 @@ A just-in-time compiling brainfuck interpreter, to be built with the RPython Too
 Download the latest [pypy source](C:\Tools\pypy2.7-v7.1.0-src\rpython\bin), and build as follows:
 
     python /path/to/pypy2.7-v7.1.0-src/rpython/bin/rpython --opt=jit bf-jit.py
+
+The resulting executable will be named bf-jit-c or similar in the current working directory.
