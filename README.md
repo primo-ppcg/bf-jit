@@ -1,6 +1,6 @@
 # bf-jit
 
-A just-in-time compiling brainfuck interpreter, to be built with the RPython Toolchain.
+A just-in-time compiling interpreter for the [brainfuck](https://esolangs.org/wiki/Brainfuck) programming language, to be built with the RPython Toolchain.
 
 Download the latest [pypy source](https://www.pypy.org/download.html#source), and build as follows:
 
