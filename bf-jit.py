@@ -118,7 +118,7 @@ def parse(program, i = 0, depth = 0):
         shift = 0
       else:
         value = 44 - ord(char)
-        while i < proglen and program[i+1] in '+-':
+        while i+1 < proglen and program[i+1] in '+-':
           i += 1
           value += 44 - ord(program[i])
         parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
