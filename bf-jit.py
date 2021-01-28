@@ -10,14 +10,13 @@ jitdriver = JitDriver(
 )
 
 # one byte instructions
-MV, SHFT, PUTC, GETC = 0x00, 0x20, 0x40, 0x60
+ZERO, SHFT, PUTC, GETC = 0x00, 0x20, 0x40, 0x60
 # two byte instructions
 ADD, MUL = 0x80, 0xA0
 # three byte instructions
 JRZ, JRNZ = 0xC0, 0xE0
 
-
-def mainloop(program):
+def run(program):
   pc = 0
   proglen = len(program)
   tape = bytearray("\0"*65536)
@@ -51,9 +50,9 @@ def mainloop(program):
         pc += 3
       pointer = pointer_rel
 
-    elif command == MV:
+    elif command == ZERO:
+      tape[pointer_rel] = 0
       pc += 1
-      pointer = pointer_rel
 
     elif command == MUL:
       tape[pointer_rel] += tape[pointer] * ord(program[pc + 1])
@@ -77,7 +76,7 @@ def mainloop(program):
 
 
 def parse(program, i = 0, depth = 0):
-  # TODO: unwrap balanced loops without MV as MUL
+  # TODO: unroll balanced loops without PUTC, GETC, JRZ as MUL
   parsed = bytes()
   proglen = len(program)
   shift = 0
@@ -98,7 +97,7 @@ def parse(program, i = 0, depth = 0):
           shift += 16
       elif char == '[':
         if program[i + 1] in '+-' and program[i + 2] == ']':
-          parsed += chr(MV | (shift & 0x1F)) + chr(MUL) + chr(255)
+          parsed += chr(ZERO | (shift & 0x1F))
           shift = 0
           i += 2
         else:
@@ -165,7 +164,7 @@ def main(argv):
   elif depth < 0:
     os.write(2, 'Unmatched `]` in source\n')
     return 1
-  mainloop(program)
+  run(program)
 
   return 0
 
