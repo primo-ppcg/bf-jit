@@ -102,16 +102,19 @@ def parse(program, i = 0, depth = 0):
   while i < proglen:
     char = program[i]
     if char in '><+-[].,':
+
       if char == '>':
         shift += 1
         if shift > 15:
           parsed += chr(SHFT | 0x0F)
           shift -= 15
+
       elif char == '<':
         shift -= 1
         if shift < -16:
           parsed += chr(SHFT | 0x10)
           shift += 16
+
       elif char == '[':
         if program[i + 1] in '+-' and program[i + 2] == ']':
           parsed += chr(ZERO | (shift & 0x1F))
@@ -127,6 +130,7 @@ def parse(program, i = 0, depth = 0):
             sublen >>= 7
           parsed += chr(JRZ | (shift & 0x1F)) + jump + subprog
           shift = 0
+
       elif char == ']':
         sublen = len(parsed)
         jump = chr(sublen & 0x7F)
@@ -135,12 +139,15 @@ def parse(program, i = 0, depth = 0):
           jump = chr(sublen & 0x7f | 0x80) + jump
           sublen >>= 7
         return parsed + chr(JRNZ | (shift & 0x1F)) + jump, i, depth - 1
+
       elif char == '.':
         parsed += chr(PUTC | (shift & 0x1F))
         shift = 0
+
       elif char == ',':
         parsed += chr(GETC | (shift & 0x1F))
         shift = 0
+
       else:
         value = 44 - ord(char)
         while i+1 < proglen and program[i+1] in '+-':
@@ -148,6 +155,7 @@ def parse(program, i = 0, depth = 0):
           value += 44 - ord(program[i])
         parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
         shift = 0
+
     i += 1
 
   return parsed, i, depth
