@@ -13,7 +13,7 @@ jitdriver = JitDriver(
 ZERO, SHFT, PUTC, GETC = 0x00, 0x20, 0x40, 0x60
 # two byte instructions
 ADD, MUL = 0x80, 0xA0
-# three byte instructions
+# variable length instructions
 JRZ, JRNZ = 0xC0, 0xE0
 
 def run(program):
@@ -37,17 +37,34 @@ def run(program):
       pc += 2
 
     elif command == JRNZ:
+      jump = 0
+      i = 1
+      val = ord(program[pc + i])
+      while val > 0x7F:
+        jump = jump << 7 | (val & 0x7F)
+        i += 1
+        val = ord(program[pc + i])
+      jump = jump << 7 | val
+      i += 1
       if tape[pointer_rel] != 0:
-        pc -= ord(program[pc + 1]) << 8 | ord(program[pc + 2])
+        pc -= jump
       else:
-        pc += 3
-      pointer = pointer_rel
+        pc += i
 
     elif command == JRZ:
+      jump = 0
+      i = 1
+      val = ord(program[pc + i])
+      while val > 0x7F:
+        jump = jump << 7 | (val & 0x7F)
+        i += 1
+        val = ord(program[pc + i])
+      jump = jump << 7 | val
+      i += 1
       if tape[pointer_rel] == 0:
-        pc += ord(program[pc + 1]) << 8 | ord(program[pc + 2])
+        pc += jump + i
       else:
-        pc += 3
+        pc += i
       pointer = pointer_rel
 
     elif command == ZERO:
@@ -103,12 +120,20 @@ def parse(program, i = 0, depth = 0):
         else:
           subprog, i, _ = parse(program, i + 1, depth + 1)
           sublen = len(subprog)
-          jump = chr((sublen + 3) >> 8) + chr((sublen + 3) & 0xFF)
+          jump = chr(sublen & 0x7F)
+          sublen >>= 7
+          while sublen:
+            jump = chr(sublen & 0x7f | 0x80) + jump
+            sublen >>= 7
           parsed += chr(JRZ | (shift & 0x1F)) + jump + subprog
           shift = 0
       elif char == ']':
         sublen = len(parsed)
-        jump = chr(sublen >> 8) + chr(sublen & 0xFF)
+        jump = chr(sublen & 0x7F)
+        sublen >>= 7
+        while sublen:
+          jump = chr(sublen & 0x7f | 0x80) + jump
+          sublen >>= 7
         return parsed + chr(JRNZ | (shift & 0x1F)) + jump, i, depth - 1
       elif char == '.':
         parsed += chr(PUTC | (shift & 0x1F))
