@@ -9,6 +9,17 @@ jitdriver = JitDriver(
   reds   = 'auto'
 )
 
+def ext_gcd(a, m):
+  a = int(a%m)
+  x, u = 0, 1
+  while a:
+    x, u = u, x - (m//a)*u
+    m, a = a, m%a
+  return (m, x, u)
+
+# modular inverses, computed at compile time
+MOD_INV = [ext_gcd(-i, 256)[1] & 255 for i in range(256)]
+
 # one byte instructions
 ZERO, SHFT, PUTC, GETC = 0x00, 0x20, 0x40, 0x60
 # two byte instructions
@@ -93,11 +104,13 @@ def run(program):
 
 
 def parse(program, i = 0, depth = 0):
-  # TODO: unroll balanced loops without PUTC, GETC, JRZ as MUL
   parsed = bytes()
   proglen = len(program)
   shift = 0
-  values = {}
+  total_shift = 0
+  base_value = 0
+  base_i = i
+  poison = False
 
   while i < proglen:
     char = program[i]
@@ -105,12 +118,14 @@ def parse(program, i = 0, depth = 0):
 
       if char == '>':
         shift += 1
+        total_shift += 1
         if shift > 15:
           parsed += chr(SHFT | 0x0F)
           shift -= 15
 
       elif char == '<':
         shift -= 1
+        total_shift -= 1
         if shift < -16:
           parsed += chr(SHFT | 0x10)
           shift += 16
@@ -120,8 +135,10 @@ def parse(program, i = 0, depth = 0):
           parsed += chr(ZERO | (shift & 0x1F))
           shift = 0
           i += 2
+          if total_shift == 0:
+            poison = True
         else:
-          subprog, i, _ = parse(program, i + 1, depth + 1)
+          subprog, i, depth = parse(program, i + 1, depth + 1)
           sublen = len(subprog)
           jump = chr(sublen & 0x7F)
           sublen >>= 7
@@ -130,8 +147,14 @@ def parse(program, i = 0, depth = 0):
             sublen >>= 7
           parsed += chr(JRZ | (shift & 0x1F)) + jump + subprog
           shift = 0
+          poison = True
 
       elif char == ']':
+        # balanced loop, unroll as MUL
+        # TODO: unroll loops with even decrement?
+        if total_shift == 0 and not poison and (base_value & 1) == 1:
+          parsed = unroll(program, base_i, MOD_INV[base_value & 255])
+          return parsed, i, depth - 1
         sublen = len(parsed)
         jump = chr(sublen & 0x7F)
         sublen >>= 7
@@ -143,22 +166,71 @@ def parse(program, i = 0, depth = 0):
       elif char == '.':
         parsed += chr(PUTC | (shift & 0x1F))
         shift = 0
+        poison = True
 
       elif char == ',':
         parsed += chr(GETC | (shift & 0x1F))
         shift = 0
+        poison = True
 
       else:
         value = 44 - ord(char)
         while i+1 < proglen and program[i+1] in '+-':
           i += 1
           value += 44 - ord(program[i])
+        if total_shift == 0:
+          base_value += value
         parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
         shift = 0
 
     i += 1
 
   return parsed, i, depth
+
+
+def unroll(program, i, mul):
+  parsed = bytes()
+  shift = 0
+  total_shift = 0
+
+  while True:
+    char = program[i]
+    if char in '><+-[]':
+
+      if char == '>':
+        shift += 1
+        total_shift += 1
+        if shift > 15:
+          parsed += chr(SHFT | 0x0F)
+          shift -= 15
+
+      elif char == '<':
+        shift -= 1
+        total_shift -= 1
+        if shift < -16:
+          parsed += chr(SHFT | 0x10)
+          shift += 16
+
+      elif char == '[':
+        assert(program[i + 1] in '+-' and program[i + 2] == ']' and total_shift != 0)
+        parsed += chr(ZERO | (shift & 0x1F))
+        shift = 0
+        i += 2
+
+      elif char == ']':
+        assert(total_shift == 0)
+        return parsed + chr(ZERO | (shift & 0x1F))
+
+      else:
+        value = 44 - ord(char)
+        while program[i+1] in '+-':
+          i += 1
+          value += 44 - ord(program[i])
+        if total_shift != 0:
+          parsed += chr(MUL | (shift & 0x1F)) + chr(value * mul & 0xFF)
+          shift = 0
+
+    i += 1
 
 
 def main(argv):
@@ -171,15 +243,17 @@ def main(argv):
     return 1
 
   source = ''
+  has_code = False
   for opt, val in optlist:
     if opt == '-c' or opt == '--code':
       source = val
+      has_code = True
     elif opt == '-h' or opt == '--help':
       display_usage(argv[0])
       display_help()
       return 1
 
-  if source == '':
+  if not has_code:
     try:
       with open(args[0]) as file:
         source = file.read()
