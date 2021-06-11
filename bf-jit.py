@@ -150,9 +150,9 @@ def parse(program, i = 0, depth = 0):
           poison = True
 
       elif char == ']':
-        # balanced loop, unroll as MUL
-        # TODO: unroll loops with even decrement?
         if total_shift == 0 and not poison and (base_value & 1) == 1:
+          # balanced loop, unroll as MUL
+          # TODO: unroll loops with even decrement?
           parsed = unroll(program, base_i, MOD_INV[base_value & 255])
           return parsed, i, depth - 1
         sublen = len(parsed)
@@ -192,6 +192,7 @@ def unroll(program, i, mul):
   parsed = bytes()
   shift = 0
   total_shift = 0
+  zeros = []
 
   while True:
     char = program[i]
@@ -214,6 +215,7 @@ def unroll(program, i, mul):
       elif char == '[':
         assert(program[i + 1] in '+-' and program[i + 2] == ']' and total_shift != 0)
         parsed += chr(ZERO | (shift & 0x1F))
+        zeros.append(total_shift)
         shift = 0
         i += 2
 
@@ -227,7 +229,10 @@ def unroll(program, i, mul):
           i += 1
           value += 44 - ord(program[i])
         if total_shift != 0:
-          parsed += chr(MUL | (shift & 0x1F)) + chr(value * mul & 0xFF)
+          if total_shift in zeros:
+            parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
+          else:
+            parsed += chr(MUL | (shift & 0x1F)) + chr(value * mul & 0xFF)
           shift = 0
 
     i += 1
