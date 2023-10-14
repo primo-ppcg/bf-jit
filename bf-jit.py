@@ -30,7 +30,7 @@ JRZ, JRNZ = 0xC0, 0xE0
 def run(program):
   pc = 0
   proglen = len(program)
-  tape = bytearray("\0"*65536)
+  tape = bytearray('\0' * 0x10000)
   pointer = r_uint16(0)
   pointer_rel = r_uint16(0)
 
@@ -103,139 +103,141 @@ def run(program):
       pc += 1
 
 
-def parse(program, i = 0, depth = 0):
+def parse(source, i = 0, depth = 0):
   parsed = bytes()
-  proglen = len(program)
+  srclen = len(source)
   shift = 0
   total_shift = 0
   base_value = 0
   base_i = i
   poison = False
 
-  while i < proglen:
-    char = program[i]
-    if char in '><+-[].,':
+  while i < srclen:
+    char = source[i]
 
-      if char == '>':
-        shift += 1
-        total_shift += 1
-        if shift > 15:
-          parsed += chr(SHFT | 0x0F)
-          shift -= 15
+    if char == '>':
+      shift += 1
+      total_shift += 1
+      if shift > 15:
+        parsed += chr(SHFT | 0x0F)
+        shift -= 15
 
-      elif char == '<':
-        shift -= 1
-        total_shift -= 1
-        if shift < -16:
-          parsed += chr(SHFT | 0x10)
-          shift += 16
+    elif char == '<':
+      shift -= 1
+      total_shift -= 1
+      if shift < -16:
+        parsed += chr(SHFT | 0x10)
+        shift += 16
 
-      elif char == '[':
-        if program[i + 1] in '+-' and program[i + 2] == ']':
-          parsed += chr(ZERO | (shift & 0x1F))
-          shift = 0
-          i += 2
-          if total_shift == 0:
-            poison = True
-        else:
-          subprog, i, depth = parse(program, i + 1, depth + 1)
-          sublen = len(subprog)
-          jump = chr(sublen & 0x7F)
-          sublen >>= 7
-          while sublen:
-            jump = chr(sublen & 0x7f | 0x80) + jump
-            sublen >>= 7
-          parsed += chr(JRZ | (shift & 0x1F)) + jump + subprog
-          shift = 0
+    elif char == '[':
+      if source[i + 1] in '+-' and source[i + 2] == ']':
+        parsed += chr(ZERO | (shift & 0x1F))
+        shift = 0
+        i += 2
+        if total_shift == 0:
           poison = True
-
-      elif char == ']':
-        if total_shift == 0 and not poison and (base_value & 1) == 1:
-          # balanced loop, unroll as MUL
-          # TODO: unroll loops with even decrement?
-          parsed = unroll(program, base_i, MOD_INV[base_value & 255])
-          return parsed, i, depth - 1
-        sublen = len(parsed)
+      else:
+        subprog, i, depth = parse(source, i + 1, depth + 1)
+        sublen = len(subprog)
         jump = chr(sublen & 0x7F)
         sublen >>= 7
         while sublen:
           jump = chr(sublen & 0x7f | 0x80) + jump
           sublen >>= 7
-        return parsed + chr(JRNZ | (shift & 0x1F)) + jump, i, depth - 1
-
-      elif char == '.':
-        parsed += chr(PUTC | (shift & 0x1F))
+        parsed += chr(JRZ | (shift & 0x1F)) + jump + subprog
         shift = 0
         poison = True
 
-      elif char == ',':
-        parsed += chr(GETC | (shift & 0x1F))
-        shift = 0
-        poison = True
+    elif char == ']':
+      if total_shift == 0 and not poison and (base_value & 1) == 1:
+        # balanced loop, unroll as MUL
+        # TODO: unroll loops with even decrement?
+        parsed = unroll(source, base_i, MOD_INV[base_value & 255])
+        return parsed, i, depth - 1
+      sublen = len(parsed)
+      jump = chr(sublen & 0x7F)
+      sublen >>= 7
+      while sublen:
+        jump = chr(sublen & 0x7f | 0x80) + jump
+        sublen >>= 7
+      return parsed + chr(JRNZ | (shift & 0x1F)) + jump, i, depth - 1
 
-      else:
-        value = 44 - ord(char)
-        while i+1 < proglen and program[i+1] in '+-':
-          i += 1
-          value += 44 - ord(program[i])
-        if total_shift == 0:
-          base_value += value
-        parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
-        shift = 0
+    elif char == '.':
+      parsed += chr(PUTC | (shift & 0x1F))
+      shift = 0
+      poison = True
+
+    elif char == ',':
+      parsed += chr(GETC | (shift & 0x1F))
+      shift = 0
+      poison = True
+
+    else:
+      value = 44 - ord(char)
+      while i+1 < srclen and source[i+1] in '+-':
+        i += 1
+        value += 44 - ord(source[i])
+      if total_shift == 0:
+        base_value += value
+      parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
+      shift = 0
 
     i += 1
 
   return parsed, i, depth
 
 
-def unroll(program, i, mul):
+def unroll(source, i, mul):
   parsed = bytes()
   shift = 0
   total_shift = 0
   zeros = []
 
   while True:
-    char = program[i]
-    if char in '><+-[]':
+    char = source[i]
 
-      if char == '>':
-        shift += 1
-        total_shift += 1
-        if shift > 15:
-          parsed += chr(SHFT | 0x0F)
-          shift -= 15
+    if char == '>':
+      shift += 1
+      total_shift += 1
+      if shift > 15:
+        parsed += chr(SHFT | 0x0F)
+        shift -= 15
 
-      elif char == '<':
-        shift -= 1
-        total_shift -= 1
-        if shift < -16:
-          parsed += chr(SHFT | 0x10)
-          shift += 16
+    elif char == '<':
+      shift -= 1
+      total_shift -= 1
+      if shift < -16:
+        parsed += chr(SHFT | 0x10)
+        shift += 16
 
-      elif char == '[':
-        assert(program[i + 1] in '+-' and program[i + 2] == ']' and total_shift != 0)
-        parsed += chr(ZERO | (shift & 0x1F))
-        zeros.append(total_shift)
+    elif char == '[':
+      assert(source[i + 1] in '+-' and source[i + 2] == ']' and total_shift != 0)
+      parsed += chr(ZERO | (shift & 0x1F))
+      zeros.append(total_shift)
+      shift = 0
+      i += 2
+
+    elif char == ']':
+      assert(total_shift == 0)
+      return parsed + chr(ZERO | (shift & 0x1F))
+
+    else:
+      value = 44 - ord(char)
+      while source[i+1] in '+-':
+        i += 1
+        value += 44 - ord(source[i])
+      if total_shift != 0:
+        if total_shift in zeros:
+          parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
+        else:
+          parsed += chr(MUL | (shift & 0x1F)) + chr(value * mul & 0xFF)
         shift = 0
-        i += 2
-
-      elif char == ']':
-        assert(total_shift == 0)
-        return parsed + chr(ZERO | (shift & 0x1F))
-
-      else:
-        value = 44 - ord(char)
-        while program[i+1] in '+-':
-          i += 1
-          value += 44 - ord(program[i])
-        if total_shift != 0:
-          if total_shift in zeros:
-            parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
-          else:
-            parsed += chr(MUL | (shift & 0x1F)) + chr(value * mul & 0xFF)
-          shift = 0
 
     i += 1
+
+
+def sift(source, vals):
+  return [c for c in source if c in vals]
 
 
 def main(argv):
@@ -269,6 +271,7 @@ def main(argv):
       os.write(2, 'File not found: %s\n'%args[0])
       return 1
 
+  source = sift(source, '+,-.<>[]')
   program, i, depth = parse(source)
   if depth > 0:
     os.write(2, 'Unmatched `[` in source\n')
