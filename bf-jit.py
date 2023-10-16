@@ -1,6 +1,7 @@
 import os
 from rpython.rlib.jit import JitDriver
 from rpython.rlib.rarithmetic import build_int, widen
+from rpython.rlib.rstring import StringBuilder
 
 r_uint16 = build_int('r_short', False, 16)
 
@@ -104,7 +105,7 @@ def run(program):
 
 
 def parse(source, i = 0, depth = 0):
-  parsed = bytes()
+  builder = StringBuilder()
   srclen = len(source)
   shift = 0
   total_shift = 0
@@ -119,19 +120,19 @@ def parse(source, i = 0, depth = 0):
       shift += 1
       total_shift += 1
       if shift > 15:
-        parsed += chr(SHFT | 0x0F)
+        builder.append(chr(SHFT | 0x0F))
         shift -= 15
 
     elif char == '<':
       shift -= 1
       total_shift -= 1
       if shift < -16:
-        parsed += chr(SHFT | 0x10)
+        builder.append(chr(SHFT | 0x10))
         shift += 16
 
     elif char == '[':
       if source[i + 1] in '+-' and source[i + 2] == ']':
-        parsed += chr(ZERO | (shift & 0x1F))
+        builder.append(chr(ZERO | (shift & 0x1F)))
         shift = 0
         i += 2
         if total_shift == 0:
@@ -144,7 +145,8 @@ def parse(source, i = 0, depth = 0):
         while sublen:
           jump = chr(sublen & 0x7f | 0x80) + jump
           sublen >>= 7
-        parsed += chr(JRZ | (shift & 0x1F)) + jump + subprog
+        builder.append(chr(JRZ | (shift & 0x1F)) + jump)
+        builder.append(subprog)
         shift = 0
         poison = True
 
@@ -152,23 +154,24 @@ def parse(source, i = 0, depth = 0):
       if total_shift == 0 and not poison and (base_value & 1) == 1:
         # balanced loop, unroll as MUL
         # TODO: unroll loops with even decrement?
-        parsed = unroll(source, base_i, MOD_INV[base_value & 255])
-        return parsed, i, depth - 1
-      sublen = len(parsed)
+        subprog = unroll(source, base_i, MOD_INV[base_value & 255])
+        return subprog, i, depth - 1
+      sublen = builder.getlength()
       jump = chr(sublen & 0x7F)
       sublen >>= 7
       while sublen:
         jump = chr(sublen & 0x7f | 0x80) + jump
         sublen >>= 7
-      return parsed + chr(JRNZ | (shift & 0x1F)) + jump, i, depth - 1
+      builder.append(chr(JRNZ | (shift & 0x1F)) + jump)
+      return builder.build(), i, depth - 1
 
     elif char == '.':
-      parsed += chr(PUTC | (shift & 0x1F))
+      builder.append(chr(PUTC | (shift & 0x1F)))
       shift = 0
       poison = True
 
     elif char == ',':
-      parsed += chr(GETC | (shift & 0x1F))
+      builder.append(chr(GETC | (shift & 0x1F)))
       shift = 0
       poison = True
 
@@ -179,16 +182,16 @@ def parse(source, i = 0, depth = 0):
         value += 44 - ord(source[i])
       if total_shift == 0:
         base_value += value
-      parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
+      builder.append(chr(ADD | (shift & 0x1F)) + chr(value & 0xFF))
       shift = 0
 
     i += 1
 
-  return parsed, i, depth
+  return builder.build(), i, depth
 
 
 def unroll(source, i, mul):
-  parsed = bytes()
+  builder = StringBuilder()
   shift = 0
   total_shift = 0
   zeros = []
@@ -200,26 +203,27 @@ def unroll(source, i, mul):
       shift += 1
       total_shift += 1
       if shift > 15:
-        parsed += chr(SHFT | 0x0F)
+        builder.append(chr(SHFT | 0x0F))
         shift -= 15
 
     elif char == '<':
       shift -= 1
       total_shift -= 1
       if shift < -16:
-        parsed += chr(SHFT | 0x10)
+        builder.append(chr(SHFT | 0x10))
         shift += 16
 
     elif char == '[':
       assert(source[i + 1] in '+-' and source[i + 2] == ']' and total_shift != 0)
-      parsed += chr(ZERO | (shift & 0x1F))
+      builder.append(chr(ZERO | (shift & 0x1F)))
       zeros.append(total_shift)
       shift = 0
       i += 2
 
     elif char == ']':
       assert(total_shift == 0)
-      return parsed + chr(ZERO | (shift & 0x1F))
+      builder.append(chr(ZERO | (shift & 0x1F)))
+      return builder.build()
 
     else:
       value = 44 - ord(char)
@@ -228,9 +232,9 @@ def unroll(source, i, mul):
         value += 44 - ord(source[i])
       if total_shift != 0:
         if total_shift in zeros:
-          parsed += chr(ADD | (shift & 0x1F)) + chr(value & 0xFF)
+          builder.append(chr(ADD | (shift & 0x1F)) + chr(value & 0xFF))
         else:
-          parsed += chr(MUL | (shift & 0x1F)) + chr(value * mul & 0xFF)
+          builder.append(chr(MUL | (shift & 0x1F)) + chr(value * mul & 0xFF))
         shift = 0
 
     i += 1
