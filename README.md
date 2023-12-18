@@ -1,4 +1,8 @@
-# bf-jit
+# :no_entry: DEPRECATED
+
+This project has been superseded by [bfci](https://github.com/primo-ppcg/bfci), and is no longer mantained.
+
+## bf-jit
 
 A just-in-time compiling interpreter for the [brainfuck](https://esolangs.org/wiki/Brainfuck) programming language, to be built with the RPython Toolchain.
 
